@@ -1,0 +1,155 @@
+syntax = "proto3";
+
+package notifications;
+
+// User Service - Manages user preferences and profiles
+service UserService {
+  rpc GetUser (GetUserRequest) returns (UserResponse);
+  rpc GetUserPreferences (GetUserPreferencesRequest) returns (UserPreferencesResponse);
+  rpc UpdateUserPreferences (UpdateUserPreferencesRequest) returns (UserPreferencesResponse);
+  rpc BatchGetUsers (BatchGetUsersRequest) returns (BatchGetUsersResponse);
+}
+
+// Template Service - Manages notification templates
+service TemplateService {
+  rpc GetTemplate (GetTemplateRequest) returns (TemplateResponse);
+  rpc RenderTemplate (RenderTemplateRequest) returns (RenderedTemplateResponse);
+  rpc ListTemplates (ListTemplatesRequest) returns (ListTemplatesResponse);
+  rpc CreateTemplate (CreateTemplateRequest) returns (TemplateResponse);
+}
+
+// Push Notification Service - Handles push notifications
+service PushNotificationService {
+  rpc SendPushNotification (SendPushRequest) returns (SendPushResponse);
+  rpc GetNotificationStatus (GetNotificationStatusRequest) returns (NotificationStatusResponse);
+}
+
+// Common messages
+message User {
+  string user_id = 1;
+  string email = 2;
+  string phone_number = 3;
+  string full_name = 4;
+  string timezone = 5;
+  int64 created_at = 6;
+}
+
+message UserPreferences {
+  string user_id = 1;
+  bool email_enabled = 2;
+  bool push_enabled = 3;
+  bool sms_enabled = 4;
+  repeated string notification_types = 5;
+  string preferred_language = 6;
+  map<string, bool> channel_preferences = 7;
+}
+
+message Template {
+  string template_id = 1;
+  string name = 2;
+  string subject = 3;
+  string body = 4;
+  string template_type = 5; // email, push, sms
+  string language = 6;
+  map<string, string> metadata = 7;
+  int64 created_at = 8;
+  int64 updated_at = 9;
+}
+
+// User Service Messages
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message UserResponse {
+  User user = 1;
+  string error_message = 2;
+}
+
+message GetUserPreferencesRequest {
+  string user_id = 1;
+}
+
+message UserPreferencesResponse {
+  UserPreferences preferences = 1;
+  string error_message = 2;
+}
+
+message UpdateUserPreferencesRequest {
+  string user_id = 1;
+  UserPreferences preferences = 2;
+}
+
+message BatchGetUsersRequest {
+  repeated string user_ids = 1;
+}
+
+message BatchGetUsersResponse {
+  repeated User users = 1;
+  repeated string not_found_user_ids = 2;
+}
+
+// Template Service Messages
+message GetTemplateRequest {
+  string template_id = 1;
+  string language = 2; // optional
+}
+
+message TemplateResponse {
+  Template template = 1;
+  string error_message = 2;
+}
+
+message RenderTemplateRequest {
+  string template_id = 1;
+  map<string, string> variables = 2;
+  string language = 3;
+}
+
+message RenderedTemplateResponse {
+  string subject = 1;
+  string body = 2;
+  string error_message = 3;
+}
+
+message ListTemplatesRequest {
+  string template_type = 1; // filter by type
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+message ListTemplatesResponse {
+  repeated Template templates = 1;
+  int32 total_count = 2;
+}
+
+message CreateTemplateRequest {
+  Template template = 1;
+}
+
+// Push Notification Service Messages
+message SendPushRequest {
+  string user_id = 1;
+  string title = 2;
+  string body = 3;
+  map<string, string> data = 4;
+  string priority = 5; // high, normal, low
+  string request_id = 6; // for idempotency
+}
+
+message SendPushResponse {
+  string notification_id = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+message GetNotificationStatusRequest {
+  string notification_id = 1;
+}
+
+message NotificationStatusResponse {
+  string notification_id = 1;
+  string status = 2; // pending, sent, delivered, failed
+  int64 sent_at = 3;
+  string error_message = 4;
+}

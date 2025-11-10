@@ -1,0 +1,138 @@
+version: "3.9"
+
+networks:
+  notifications:
+    driver: bridge
+
+volumes:
+  postgres_data:
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - notifications
+
+  redis:
+    image: redis:7.2-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - notifications
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: pass
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - notifications
+
+  api_gateway:
+    build:
+      context: ./apps/api_gateway
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+    depends_on:
+      - rabbitmq
+      - redis
+      - user_service
+      - template_service
+    ports:
+      - "4000:4000"
+    restart: unless-stopped
+    networks:
+      - notifications
+
+  user_service:
+    build:
+      context: ./apps/user_service
+    environment:
+      NODE_ENV: production
+      PORT: 4001
+      GRPC_PORT: 50051
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "4001:4001"
+      - "50051:50051" # gRPC (optional)
+    restart: unless-stopped
+    networks:
+      - notifications
+
+  template_service:
+    build:
+      context: ./apps/template_service
+    environment:
+      NODE_ENV: production
+      PORT: 4002
+      GRPC_PORT: 50052
+    depends_on:
+      - postgres
+    ports:
+      - "4002:4002"
+      - "50052:50052" # gRPC (optional)
+    restart: unless-stopped
+    networks:
+      - notifications
+
+  email_service:
+    build:
+      context: ./apps/email_service
+    environment:
+      PORT: 8000
+    depends_on:
+      - rabbitmq
+      - template_service
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - notifications
+
+  push_service:
+    build:
+      context: ./apps/push_service
+    environment:
+      NODE_ENV: production
+      PORT: 4100
+      GRPC_PORT: 50053
+    depends_on:
+      - rabbitmq
+    ports:
+      - "4100:4100"
+      - "50053:50053" # gRPC (optional)
+    restart: unless-stopped
+    networks:
+      - notifications
