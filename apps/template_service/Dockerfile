@@ -12,7 +12,7 @@ RUN pnpm run build
 
 FROM node:25-bookworm-slim AS runner
 WORKDIR /app
-RUN corepack enable pnpm && apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 ENV PORT=4002
 COPY package.json pnpm-lock.yaml* ./
