@@ -26,7 +26,7 @@ ENV PATH="/root/.local/bin:${PATH}"
 COPY --from=builder /root/.local /root/.local
 
 # Copy application code
-COPY app ./app
+COPY . .
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
@@ -37,4 +37,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
 	CMD curl -f http://localhost:8000/health || exit 1
 
 # FastAPI with uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
