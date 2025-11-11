@@ -5,7 +5,11 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data:
+  postgres_user_data:
+  postgres_template_data:
+  postgres_email_data:
+  postgres_push_data:
+  redis_data:
 
 services:
   rabbitmq:
@@ -30,6 +34,8 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -39,20 +45,82 @@ services:
     networks:
       - notifications
 
-  postgres:
+  postgres_user:
     image: postgres:16-alpine
+    container_name: postgres_user
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: pass
+      POSTGRES_USER: ${USER_DB_USER:-user_svc}
+      POSTGRES_PASSWORD: ${USER_DB_PASS:-user_dev_password}
+      POSTGRES_DB: ${USER_DB_NAME:-user_service_db}
     ports:
-      - "5432:5432"
+      - "5433:5432"
+    volumes:
+      - postgres_user_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 30s
+      test: ["CMD-SHELL", "pg_isready -U ${USER_DB_USER:-user_svc}"]
+      interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+    networks:
+      - notifications
+
+  postgres_template:
+    image: postgres:16-alpine
+    container_name: postgres_template
+    environment:
+      POSTGRES_USER: ${TEMPLATE_DB_USER:-template_svc}
+      POSTGRES_PASSWORD: ${TEMPLATE_DB_PASS:-template_dev_password}
+      POSTGRES_DB: ${TEMPLATE_DB_NAME:-template_service_db}
+    ports:
+      - "5434:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_template_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEMPLATE_DB_USER:-template_svc}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - notifications
+
+  postgres_email:
+    image: postgres:16-alpine
+    container_name: postgres_email
+    environment:
+      POSTGRES_USER: ${EMAIL_DB_USER:-email_svc}
+      POSTGRES_PASSWORD: ${EMAIL_DB_PASS:-email_dev_password}
+      POSTGRES_DB: ${EMAIL_DB_NAME:-email_service_db}
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_email_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${EMAIL_DB_USER:-email_svc}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - notifications
+
+  postgres_push:
+    image: postgres:16-alpine
+    container_name: postgres_push
+    environment:
+      POSTGRES_USER: ${PUSH_DB_USER:-push_svc}
+      POSTGRES_PASSWORD: ${PUSH_DB_PASS:-push_dev_password}
+      POSTGRES_DB: ${PUSH_DB_NAME:-push_service_db}
+    ports:
+      - "5436:5432"
+    volumes:
+      - postgres_push_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PUSH_DB_USER:-push_svc}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
     networks:
       - notifications
@@ -63,11 +131,22 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      USER_SERVICE_URL: http://user_service:4001
+      TEMPLATE_SERVICE_URL: http://template_service:4002
+      PUSH_SERVICE_URL: http://push_service:4100
+      EMAIL_SERVICE_URL: http://email_service:8000
     depends_on:
-      - rabbitmq
-      - redis
-      - user_service
-      - template_service
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      user_service:
+        condition: service_started
+      template_service:
+        condition: service_started
     ports:
       - "4000:4000"
     restart: unless-stopped
@@ -80,13 +159,23 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4001
-      GRPC_PORT: 50051
+      DB_HOST: postgres_user
+      DB_PORT: 5432
+      DB_USER: ${USER_DB_USER:-user_svc}
+      DB_PASSWORD: ${USER_DB_PASS:-user_dev_password}
+      DB_NAME: ${USER_DB_NAME:-user_service_db}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
     depends_on:
-      - postgres
-      - redis
+      postgres_user:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     ports:
       - "4001:4001"
-      - "50051:50051" # gRPC (optional)
     restart: unless-stopped
     networks:
       - notifications
@@ -97,12 +186,20 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4002
-      GRPC_PORT: 50052
+      DB_HOST: postgres_template
+      DB_PORT: 5432
+      DB_USER: ${TEMPLATE_DB_USER:-template_svc}
+      DB_PASSWORD: ${TEMPLATE_DB_PASS:-template_dev_password}
+      DB_NAME: ${TEMPLATE_DB_NAME:-template_service_db}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
-      - postgres
+      postgres_template:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "4002:4002"
-      - "50052:50052" # gRPC (optional)
     restart: unless-stopped
     networks:
       - notifications
@@ -112,9 +209,21 @@ services:
       context: ./apps/email_service
     environment:
       PORT: 8000
+      DB_HOST: postgres_email
+      DB_PORT: 5432
+      DB_USER: ${EMAIL_DB_USER:-email_svc}
+      DB_PASSWORD: ${EMAIL_DB_PASS:-email_dev_password}
+      DB_NAME: ${EMAIL_DB_NAME:-email_service_db}
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      TEMPLATE_SERVICE_URL: http://template_service:4002
     depends_on:
-      - rabbitmq
-      - template_service
+      postgres_email:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      template_service:
+        condition: service_started
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -127,12 +236,24 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4100
-      GRPC_PORT: 50053
+      DB_HOST: postgres_push
+      DB_PORT: 5432
+      DB_USER: ${PUSH_DB_USER:-push_svc}
+      DB_PASSWORD: ${PUSH_DB_PASS:-push_dev_password}
+      DB_NAME: ${PUSH_DB_NAME:-push_service_db}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      TEMPLATE_SERVICE_URL: http://template_service:4002
     depends_on:
-      - rabbitmq
+      postgres_push:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "4100:4100"
-      - "50053:50053" # gRPC (optional)
     restart: unless-stopped
     networks:
       - notifications
