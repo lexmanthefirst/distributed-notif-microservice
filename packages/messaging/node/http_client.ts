@@ -19,7 +19,7 @@ interface CircuitBreakerOptions {
  */
 export class ServiceClient {
   private client: AxiosInstance;
-  private breaker: CircuitBreaker;
+  private breaker: CircuitBreaker<[AxiosRequestConfig], any>;
   private serviceName: string;
 
   constructor(
@@ -97,7 +97,7 @@ export class ServiceClient {
       const response = await this.breaker.fire(config);
       return response.data;
     } catch (error) {
-      if (error.message === "Breaker is open") {
+      if (error instanceof Error && error.message === "Breaker is open") {
         throw new Error(
           `Service ${this.serviceName} is unavailable (circuit breaker open)`
         );

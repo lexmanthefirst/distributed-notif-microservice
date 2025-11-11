@@ -1,30 +1,33 @@
-import amqp, { Channel, Connection } from "amqplib";
+import * as amqplib from "amqplib";
 
 const RABBIT_URL = process.env.RABBITMQ_URL || "amqp://guest:guest@rabbitmq/";
 
 // Connection pooling - reuse connections
-let connection: Connection | null = null;
-let channel: Channel | null = null;
+let connection: any = null;
+let channel: any = null;
 
-export async function connectRabbit() {
+export async function connectRabbit(): Promise<{ conn: any; ch: any }> {
   if (connection && channel) {
     return { conn: connection, ch: channel };
   }
 
-  connection = await amqp.connect(RABBIT_URL);
-  channel = await connection.createChannel();
+  const conn = await amqplib.connect(RABBIT_URL);
+  const ch = await conn.createChannel();
+
+  connection = conn;
+  channel = ch;
 
   // Set prefetch for better load balancing
-  await channel.prefetch(10);
+  await ch.prefetch(10);
 
   // Declare exchanges
-  await channel.assertExchange("notifications.direct", "direct", {
+  await ch.assertExchange("notifications.direct", "direct", {
     durable: true,
   });
-  await channel.assertExchange("notifications.fanout", "fanout", {
+  await ch.assertExchange("notifications.fanout", "fanout", {
     durable: true,
   });
-  await channel.assertExchange("notifications.topic", "topic", {
+  await ch.assertExchange("notifications.topic", "topic", {
     durable: true,
   });
 
@@ -37,34 +40,34 @@ export async function connectRabbit() {
     },
   };
 
-  await channel.assertQueue("email.queue", queueOptions);
-  await channel.assertQueue("push.queue", queueOptions);
-  await channel.assertQueue("failed.queue", { durable: true });
+  await ch.assertQueue("email.queue", queueOptions);
+  await ch.assertQueue("push.queue", queueOptions);
+  await ch.assertQueue("failed.queue", { durable: true });
 
   // Dead letter exchange for failed messages
-  await channel.assertExchange("notifications.dead_letter", "direct", {
+  await ch.assertExchange("notifications.dead_letter", "direct", {
     durable: true,
   });
-  await channel.bindQueue("failed.queue", "notifications.dead_letter", "");
+  await ch.bindQueue("failed.queue", "notifications.dead_letter", "");
 
   // Bind queues
-  await channel.bindQueue("email.queue", "notifications.direct", "email");
-  await channel.bindQueue("push.queue", "notifications.direct", "push");
+  await ch.bindQueue("email.queue", "notifications.direct", "email");
+  await ch.bindQueue("push.queue", "notifications.direct", "push");
 
   // Handle connection errors
-  connection.on("error", (err) => {
+  conn.on("error", (err) => {
     console.error("RabbitMQ connection error:", err);
     connection = null;
     channel = null;
   });
 
-  connection.on("close", () => {
+  conn.on("close", () => {
     console.log("RabbitMQ connection closed");
     connection = null;
     channel = null;
   });
 
-  return { conn: connection, ch: channel };
+  return { conn, ch };
 }
 
 export async function publish(
@@ -77,6 +80,10 @@ export async function publish(
   }
 ) {
   const { ch } = await connectRabbit();
+
+  if (!ch) {
+    throw new Error("RabbitMQ channel not available");
+  }
 
   const message = {
     ...payload,
@@ -107,7 +114,11 @@ export async function consume(
 ) {
   const { ch } = await connectRabbit();
 
-  await ch.consume(queueName, async (msg) => {
+  if (!ch) {
+    throw new Error("RabbitMQ channel not available");
+  }
+
+  await ch.consume(queueName, async (msg: any) => {
     if (!msg) return;
 
     try {
@@ -131,8 +142,16 @@ export async function consume(
 }
 
 export async function closeRabbit() {
-  if (channel) await channel.close();
-  if (connection) await connection.close();
-  connection = null;
-  channel = null;
+  try {
+    if (channel) await channel.close();
+    if (connection) {
+      // Cast to any to access close method (amqplib types issue)
+      await (connection as any).close();
+    }
+  } catch (error) {
+    console.error("Error closing RabbitMQ connection:", error);
+  } finally {
+    connection = null;
+    channel = null;
+  }
 }
