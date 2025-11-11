@@ -10,8 +10,8 @@
     "start": "node dist/server.js",
     "start:dev": "tsx watch src/server.ts",
     "lint": "eslint \"src/**/*.ts\" --fix",
-    "test": "vitest",
-    "test:coverage": "vitest --coverage",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
