@@ -56,7 +56,3 @@ git commit -m "Add your feature"
 # Push and create PR
 git push origin feature/your-feature-name
 ```
-
-## License
-
-ISC
