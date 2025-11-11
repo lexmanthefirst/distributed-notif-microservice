@@ -1,10 +1,12 @@
 FROM node:25-bookworm-slim AS deps
 WORKDIR /app
+RUN corepack enable
 COPY package.json ./
 RUN pnpm install
 
 FROM node:25-bookworm-slim AS build
 WORKDIR /app
+RUN corepack enable
 COPY package.json tsconfig.json tsconfig.build.json nest-cli.json ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY src ./src
@@ -12,7 +14,10 @@ RUN pnpm run build
 
 FROM node:25-bookworm-slim AS runner
 WORKDIR /app
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+RUN corepack enable && \
+    apt-get update && \
+    apt-get install -y curl && \
+    rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 ENV PORT=4002
 COPY package.json ./
