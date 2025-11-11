@@ -4,7 +4,7 @@ Shared messaging utilities for the Distributed Notification System.
 
 ## 📦 What's Included
 
-This package provides three communication patterns:
+This package provides two communication patterns:
 
 ### 1. **RabbitMQ (Async Messaging)** - `rabbit.ts` / `rabbit.py`
 
@@ -36,32 +36,16 @@ This package provides three communication patterns:
 - Real-time API requests
 - Synchronous operations requiring immediate response
 
-### 3. **gRPC (High-Performance RPC)** - `grpc/notifications.proto`
-
-- ✅ Type-safe communication
-- ✅ Binary protocol (faster than JSON)
-- ✅ Strong schema validation
-- ✅ Language interoperability
-- ✅ Bi-directional streaming support
-
-**Use Cases:**
-
-- High-throughput internal service calls
-- Low-latency operations
-- Batch operations
-- Microservice mesh communication
-
 ## 🎯 When to Use Each Pattern
 
-| Pattern       | Latency | Throughput | Coupling | Use When                                         |
-| ------------- | ------- | ---------- | -------- | ------------------------------------------------ |
-| **RabbitMQ**  | High    | High       | Loose    | Fire-and-forget, async processing, events        |
-| **HTTP/REST** | Medium  | Medium     | Medium   | Request-response, external APIs, simple queries  |
-| **gRPC**      | Low     | Very High  | Tight    | Internal services, high-performance, type safety |
+| Pattern       | Latency | Throughput | Coupling | Use When                                        |
+| ------------- | ------- | ---------- | -------- | ----------------------------------------------- |
+| **RabbitMQ**  | High    | High       | Loose    | Fire-and-forget, async processing, events       |
+| **HTTP/REST** | Medium  | Medium     | Medium   | Request-response, external APIs, simple queries |
 
 ## 🏗️ Architecture Decision
 
-### Recommended Pattern for Your Notification System:
+### Communication Pattern for Your Notification System:
 
 ```
 API Gateway → RabbitMQ → Workers (Email/Push Services)
@@ -76,17 +60,9 @@ User Service ← → Template Service
 **Why this approach?**
 
 1. **API Gateway → RabbitMQ**: Async notification dispatch prevents blocking
-2. **HTTP/REST for queries**: Simple user/template lookups don't need gRPC complexity
+2. **HTTP/REST for queries**: Simple user/template lookups with circuit breakers
 3. **RabbitMQ for workers**: Email/Push services consume from queues independently
-
-### When to Add gRPC:
-
-Consider gRPC if you experience:
-
-- HTTP latency > 50ms affecting user experience
-- Need for batch operations (e.g., fetching 1000s of users)
-- High CPU usage from JSON parsing
-- Type safety issues between Node.js ↔ Python services
+4. **Loose coupling**: Services don't need direct knowledge of each other
 
 ## 📚 Usage Examples
 
@@ -129,18 +105,6 @@ if (preferences.email_enabled) {
 }
 ```
 
-### gRPC (High-Performance)
-
-```typescript
-// Future: When you need high throughput
-import * as grpc from '@grpc/grpc-js';
-
-const client = new UserServiceClient('user_service:50051');
-const response = await client.BatchGetUsers({
-  user_ids: ['1', '2', '3', ...]
-});
-```
-
 ## 🚀 Getting Started
 
 ### Install Dependencies
@@ -150,7 +114,7 @@ const response = await client.BatchGetUsers({
 pnpm install
 
 # Python dependencies (for email_service)
-pip install aio-pika httpx grpcio grpcio-tools
+pip install aio-pika httpx
 ```
 
 ### Environment Variables
@@ -163,11 +127,7 @@ RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
 USER_SERVICE_URL=http://user_service:4001
 TEMPLATE_SERVICE_URL=http://template_service:4002
 PUSH_SERVICE_URL=http://push_service:4100
-
-# gRPC Ports (optional)
-USER_SERVICE_GRPC_PORT=50051
-TEMPLATE_SERVICE_GRPC_PORT=50052
-PUSH_SERVICE_GRPC_PORT=50053
+EMAIL_SERVICE_URL=http://email_service:8000
 ```
 
 ## 🔧 Best Practices
@@ -212,12 +172,11 @@ if (!isHealthy) {
 
 - **RabbitMQ**: ~10,000 messages/second per queue
 - **HTTP/REST**: ~1,000 requests/second with circuit breaker
-- **gRPC**: ~50,000 RPC calls/second (binary protocol)
 
 ## 🔒 Security
 
 - All services communicate over internal Docker network
-- Use TLS in production: `amqps://`, `https://`, gRPC with TLS
+- Use TLS in production: `amqps://`, `https://`
 - Implement authentication tokens for inter-service calls
 - Validate message schemas before processing
 
@@ -226,7 +185,6 @@ if (!isHealthy) {
 - [ ] Add distributed tracing (OpenTelemetry)
 - [ ] Implement service mesh (Istio/Linkerd) for advanced routing
 - [ ] Add Prometheus metrics to circuit breakers
-- [ ] Implement gRPC load balancing
 - [ ] Add message encryption for sensitive data
 - [ ] Configure RabbitMQ clustering for high availability
 
