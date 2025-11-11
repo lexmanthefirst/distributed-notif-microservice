@@ -5,7 +5,7 @@ RUN pnpm install
 
 FROM node:25-bookworm-slim AS build
 WORKDIR /app
-COPY package.json tsconfig.json tsconfig.build.json nest-cli.json ./
+COPY package.json tsconfig.json tsconfig.build.json ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY src ./src
 RUN pnpm run build
