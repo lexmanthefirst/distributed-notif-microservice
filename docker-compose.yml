@@ -209,18 +209,35 @@ services:
       context: ./apps/email_service
     environment:
       PORT: 8000
+      # Option 1: Use full URLs (recommended)
+      DATABASE_URL: postgresql://${EMAIL_DB_USER:-email_svc}:${EMAIL_DB_PASS:-email_dev_password}@postgres_email:5432/${EMAIL_DB_NAME:-email_service_db}
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      # Option 2: Component fallbacks (if URLs not provided)
       DB_HOST: postgres_email
       DB_PORT: 5432
       DB_USER: ${EMAIL_DB_USER:-email_svc}
       DB_PASSWORD: ${EMAIL_DB_PASS:-email_dev_password}
       DB_NAME: ${EMAIL_DB_NAME:-email_service_db}
-      REDIS_URL: redis://redis:6379
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Template Service
       TEMPLATE_SERVICE_URL: http://template_service:4002
+      # SMTP Configuration (load from root .env)
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Notification Service}
     depends_on:
       postgres_email:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       template_service:
         condition: service_started

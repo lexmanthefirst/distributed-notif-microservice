@@ -1,14 +1,13 @@
-from fastapi import FastAPI
-
-app = FastAPI(title="Email Service")
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
-@app.get("/")
-async def root():
-    return {"message": "Email Service is running"}
+"""Entry point for Email Service - redirects to app.main"""
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    from app.core.config import settings
+    
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=settings.port,
+        reload=settings.debug,
+        log_level="info"
+    )
