@@ -4,6 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "start:dev": "tsx watch src/server.ts",
     "test": "echo \"No tests yet\""
   },
   "keywords": [],
