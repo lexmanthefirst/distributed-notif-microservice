@@ -1,38 +1,32 @@
 {
-  "name": "@distributed-notifs/user-service",
+  "name": "user_service",
   "version": "1.0.0",
-  "private": true,
-  "description": "User Service built with Fastify",
-  "main": "dist/server.js",
-  "type": "module",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/server.js",
-    "start:dev": "tsx watch src/server.ts",
-    "lint": "eslint \"src/**/*.ts\" --fix",
-    "test": "vitest",
-    "test:coverage": "vitest --coverage",
-    "typecheck": "tsc --noEmit"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.12.1",
   "dependencies": {
-    "fastify": "^4.25.2",
     "@fastify/cors": "^8.5.0",
-    "@fastify/helmet": "^11.1.1",
-    "@fastify/env": "^4.3.0",
-    "@fastify/postgres": "^5.2.2",
-    "@fastify/redis": "^6.1.1",
-    "pg": "^8.11.3",
-    "redis": "^4.6.11",
-    "zod": "^3.22.4"
+    "@fastify/postgres": "^6.0.2",
+    "@fastify/redis": "^7.1.0",
+    "amqplib": "^0.10.9",
+    "axios": "^1.13.2",
+    "fastify": "^4.29.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/node": "^20.12.7",
-    "@types/pg": "^8.10.9",
-    "@typescript-eslint/eslint-plugin": "^7.5.0",
-    "@typescript-eslint/parser": "^7.5.0",
-    "eslint": "^8.57.0",
-    "tsx": "^4.7.0",
-    "typescript": "^5.4.5",
-    "vitest": "^1.2.1"
+    "@types/node": "^24.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.4",
+    "@typescript-eslint/parser": "^8.46.4",
+    "eslint": "^9.39.1",
+    "nodemon": "^3.1.10",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
   }
 }
