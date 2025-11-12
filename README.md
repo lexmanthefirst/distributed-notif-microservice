@@ -6,7 +6,7 @@ A scalable microservices-based notification platform supporting email and push n
 
 ```bash
 # Clone the repository
-git clone https://github.com/lexmanthefirst/distributed-notif-microservice.git
+git clone hhttps://github.com/lexmanthefirst/distributed-notif-microservice
 cd distributed-notif-microservice
 
 # Enable pnpm (one-time setup)
