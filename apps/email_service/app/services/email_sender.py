@@ -150,15 +150,22 @@ class EmailSender:
                 raise ValueError(f"Template not found: {template_code}")
             
             # Convert to EmailTemplate
+            # Template service returns html_body and text_body, we prefer html_body
+            html_body = template_data.get("html_body", "")
+            text_body = template_data.get("text_body", "")
+            body = html_body if html_body else text_body
+            
+            logger.info(f"Template data received: code={template_code}, has_html_body={bool(html_body)}, has_text_body={bool(text_body)}, body_length={len(body)}")
+            
             template = EmailTemplate(
                 code=template_data.get("code", template_code),
                 subject=template_data.get("subject", ""),
-                body=template_data.get("body", ""),
+                body=body,
                 variables=template_data.get("variables", []),
                 language=template_data.get("language", "en")
             )
             
-            logger.info(f"Template fetched successfully: code={template_code}")
+            logger.info(f"Template fetched successfully: code={template_code}, template_body_length={len(template.body)}")
             return template
     
     def _render_template(self, template: EmailTemplate, variables: dict) -> tuple[str, str]:
@@ -181,7 +188,7 @@ class EmailSender:
             body_template = Template(template.body)
             rendered_body = body_template.render(**variables)
             
-            logger.info(f"Template rendered: code={template.code}, variables={list(variables.keys())}")
+            logger.info(f"Template rendered: code={template.code}, variables={list(variables.keys())}, rendered_body_length={len(rendered_body)}, rendered_subject='{rendered_subject}'")
             return rendered_subject, rendered_body
             
         except Exception as e:
