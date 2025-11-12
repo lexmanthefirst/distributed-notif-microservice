@@ -1,0 +1,467 @@
+x-security: &security
+  cap_drop:
+    - ALL
+  cap_add:
+    - CHOWN
+    - SETGID
+    - SETUID
+
+networks:
+  dnm-hng:
+    external: true
+    name: dnm-hng
+
+x-db-common: &db-common
+  image: postgres:17.2-bookworm
+  command: >
+    postgres
+    -c shared_preload_libraries=pg_stat_statements
+    -c pg_stat_statements.max=5000
+    -c pg_stat_statements.track=top
+    -c log_min_duration_statement=5000
+    -c max_connections=50
+    -c shared_buffers=256MB
+    -c effective_cache_size=1GB
+    -c work_mem=4MB
+    -c maintenance_work_mem=64MB
+    -c random_page_cost=1.1
+    -c effective_io_concurrency=200
+    -c wal_buffers=8MB
+    -c min_wal_size=1GB
+    -c max_wal_size=2GB
+    -c checkpoint_completion_target=0.9
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 30s
+  deploy:
+    resources:
+      limits:
+        memory: 384M
+        cpus: '0.5'
+      reservations:
+        memory: 256M
+        cpus: '0.25'
+  networks:
+    - dnm-hng
+
+volumes:
+  db_user_data:
+  db_template_data:
+  db_email_data:
+  db_push_data:
+  redis_data:
+  letsencrypt:
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_VM_MEMORY_HIGH_WATERMARK: 512MB
+      RABBITMQ_VM_MEMORY_HIGH_WATERMARK_PAGING_RATIO: 0.75
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 640M
+          cpus: '0.5'
+        reservations:
+          memory: 384M
+          cpus: '0.25'
+    networks:
+      - dnm-hng
+
+  redis:
+    image: redis:7.2.4-alpine
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --loglevel warning
+      --tcp-backlog 128
+      --timeout 300
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --tcp-keepalive 300
+      --maxclients 1000
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 320M
+          cpus: '0.3'
+        reservations:
+          memory: 192M
+          cpus: '0.15'
+    networks:
+      - dnm-hng
+
+  db_user:
+    <<: *db-common
+    container_name: db_user
+    environment:
+      POSTGRES_USER: ${USER_DB_USER:-user_svc}
+      POSTGRES_PASSWORD: ${USER_DB_PASS:-user_dev_password}
+      POSTGRES_DB: ${USER_DB_NAME:-user_service_db}
+    volumes:
+      - db_user_data:/var/lib/postgresql/data
+
+  db_template:
+    <<: *db-common
+    container_name: db_template
+    environment:
+      POSTGRES_USER: ${TEMPLATE_DB_USER:-template_svc}
+      POSTGRES_PASSWORD: ${TEMPLATE_DB_PASS:-template_dev_password}
+      POSTGRES_DB: ${TEMPLATE_DB_NAME:-template_service_db}
+    volumes:
+      - db_template_data:/var/lib/postgresql/data
+
+  db_email:
+    <<: *db-common
+    container_name: db_email
+    environment:
+      POSTGRES_USER: ${EMAIL_DB_USER:-email_svc}
+      POSTGRES_PASSWORD: ${EMAIL_DB_PASS:-email_dev_password}
+      POSTGRES_DB: ${EMAIL_DB_NAME:-email_service_db}
+    volumes:
+      - db_email_data:/var/lib/postgresql/data
+
+  db_push:
+    <<: *db-common
+    container_name: db_push
+    environment:
+      POSTGRES_USER: ${PUSH_DB_USER:-push_svc}
+      POSTGRES_PASSWORD: ${PUSH_DB_PASS:-push_dev_password}
+      POSTGRES_DB: ${PUSH_DB_NAME:-push_service_db}
+    volumes:
+      - db_push_data:/var/lib/postgresql/data
+
+  api_gateway:
+    image: ghcr.io/olujay/distributed-notifications-api-gateway:${GIT_COMMIT_HASH:-latest}
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      USER_SERVICE_URL: http://user_service:4001
+      TEMPLATE_SERVICE_URL: http://template_service:4002
+      PUSH_SERVICE_URL: http://push_service:4100
+      EMAIL_SERVICE_URL: http://email_service:8000
+      # Node.js optimization for container
+      NODE_OPTIONS: "--max-old-space-size=512"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api_gateway.rule=Host(`dnm-hng.theolujay.dev`)"
+      - "traefik.http.routers.api_gateway.entrypoints=websecure"
+      - "traefik.http.routers.api_gateway.tls.certresolver=le"
+      - "traefik.http.routers.api_gateway.tls=true"
+      - "traefik.http.services.api_gateway.loadbalancer.server.port=4000"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:4000/health --max-time 5 --silent --show-error || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - rabbitmq
+      - redis
+      - user_service
+      - template_service
+    ports:
+      - "4000:4000"
+    networks:
+      - dnm-hng
+    deploy:
+      update_config:
+        order: start-first
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          memory: 640M
+          cpus: '0.75'
+        reservations:
+          memory: 384M
+          cpus: '0.5'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  user_service:
+    image: ghcr.io/olujay/distributed-notifications-user-service:${GIT_COMMIT_HASH:-latest}
+    environment:
+      NODE_ENV: production
+      PORT: 4001
+      DB_HOST: db_user
+      DB_PORT: 5432
+      DB_USER: ${USER_DB_USER:-user_svc}
+      DB_PASSWORD: ${USER_DB_PASS:-user_dev_password}
+      DB_NAME: ${USER_DB_NAME:-user_service_db}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      NODE_OPTIONS: "--max-old-space-size=384"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:4001/health --max-time 5 --silent --show-error || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - db_user
+      - redis
+      - rabbitmq
+    ports:
+      - "4001:4001"
+    networks:
+      - dnm-hng
+    deploy:
+      update_config:
+        order: start-first
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 320M
+          cpus: '0.3'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  template_service:
+    image: ghcr.io/olujay/distributed-notifications-template-service:${GIT_COMMIT_HASH:-latest}
+    environment:
+      NODE_ENV: production
+      PORT: 4002
+      DB_HOST: db_template
+      DB_PORT: 5432
+      DB_USER: ${TEMPLATE_DB_USER:-template_svc}
+      DB_PASSWORD: ${TEMPLATE_DB_PASS:-template_dev_password}
+      DB_NAME: ${TEMPLATE_DB_NAME:-template_service_db}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      NODE_OPTIONS: "--max-old-space-size=384"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:4002/health --max-time 5 --silent --show-error || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - db_template
+      - redis
+    ports:
+      - "4002:4002"
+    networks:
+      - dnm-hng
+    deploy:
+      update_config:
+        order: start-first
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 320M
+          cpus: '0.3'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  email_service:
+    image: ghcr.io/olujay/distributed-notifications-email-service:${GIT_COMMIT_HASH:-latest}
+    environment:
+      PORT: 8000
+      DATABASE_URL: postgresql://${EMAIL_DB_USER:-email_svc}:${EMAIL_DB_PASS:-email_dev_password}@db_email:5432/${EMAIL_DB_NAME:-email_service_db}
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      DB_HOST: db_email
+      DB_PORT: 5432
+      DB_USER: ${EMAIL_DB_USER:-email_svc}
+      DB_PASSWORD: ${EMAIL_DB_PASS:-email_dev_password}
+      DB_NAME: ${EMAIL_DB_NAME:-email_service_db}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      TEMPLATE_SERVICE_URL: http://template_service:4002
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Notification Service}
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:8000/health --max-time 5 --silent --show-error || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - db_email
+      - rabbitmq
+      - redis
+      - template_service
+    ports:
+      - "8000:8000"
+    networks:
+      - dnm-hng
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    <<: *security
+    deploy:
+      update_config:
+        order: start-first
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 320M
+          cpus: '0.3'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  push_service:
+    image: ghcr.io/olujay/distributed-notifications-push-service:${GIT_COMMIT_HASH:-latest}
+    environment:
+      NODE_ENV: production
+      PORT: 4100
+      DB_HOST: db_push
+      DB_PORT: 5432
+      DB_USER: ${PUSH_DB_USER:-push_svc}
+      DB_PASSWORD: ${PUSH_DB_PASS:-push_dev_password}
+      DB_NAME: ${PUSH_DB_NAME:-push_service_db}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      TEMPLATE_SERVICE_URL: http://template_service:4002
+      NODE_OPTIONS: "--max-old-space-size=384"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:4100/health --max-time 5 --silent --show-error || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - db_push
+      - rabbitmq
+      - redis
+    ports:
+      - "4100:4100"
+    networks:
+      - dnm-hng
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    <<: *security
+    deploy:
+      update_config:
+        order: start-first
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 320M
+          cpus: '0.3'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  traefik:
+    image: traefik:v3.5.3
+    command:
+      - "--api.insecure=false"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=dnm-hng"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.http.tls=true"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.le.acme.email=olujay.dev@gmail.com"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.le.acme.caserver=https://acme-v02.api.letsencrypt.org/directory"
+      - "--metrics.prometheus=false"
+      - "--metrics.otlp=true"
+      - "--metrics.otlp.http=true"
+      - "--metrics.otlp.grpc=false"
+      - "--metrics.otlp.http.endpoint=http://otel-collector:4318/v1/metrics"
+      - "--metrics.otlp.serviceName=traefik"
+      - "--metrics.otlp.addEntryPointsLabels=true"
+      - "--metrics.otlp.addRoutersLabels=true"
+      - "--metrics.otlp.addServicesLabels=true"
+      - "--tracing=true"
+      - "--tracing.serviceName=traefik"
+      - "--tracing.sampleRate=0.05"
+      - "--tracing.otlp.grpc=false"
+      - "--tracing.otlp.http=true"
+      - "--tracing.otlp.http.endpoint=http://otel-collector:4318/v1/traces"
+      - "--log.level=INFO"
+      - "--log.format=json"
+      - "--accesslog=true"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - letsencrypt:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - dnm-hng
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+          cpus: '0.3'
+        reservations:
+          memory: 96M
+          cpus: '0.15'
