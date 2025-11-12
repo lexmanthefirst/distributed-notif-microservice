@@ -28,7 +28,7 @@ export class Template {
   @Column("text")
   text_body!: string;
 
-  @Column("simple-array")
+  @Column("text", { array: true, default: () => "'{}'" })
   variables!: string[];
 
   @Column({ default: true })
