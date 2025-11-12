@@ -48,7 +48,7 @@ class RedisService:
             
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {str(e)}")
-            # Don't raise - service can work without Redis (degraded mode)
+            
             self._connected = False
 
     async def _ensure_connection(self):
