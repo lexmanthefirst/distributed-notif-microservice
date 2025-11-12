@@ -1,3 +1,4 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { Client } from "pg";
@@ -11,11 +12,10 @@ fastify.register(cors);
 
 // PostgreSQL client
 const pgClient = new Client({
-  host: process.env.DB_HOST || "localhost",
-  port: Number(process.env.DB_PORT),
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
+  connectionString : process.env.DATABASE_URL,
+  ssl:{
+    rejectUnauthorized:false,
+  }
 });
 
 // RabbitMQ channel (we’ll initialize later)
@@ -89,7 +89,7 @@ async function start() {
     await pgClient.connect();
     console.log("Connected to PostgreSQL");
 
-    const RABBIT_URL = process.env.RABBITMQ_URL || "amqp://guest:guest@rabbitmq:5672";
+    const RABBIT_URL = process.env.RABBITMQ_URL || "amqp://TzSC3RZ1JAwfC6Tg:Gq~Ji2T0pm67t435v2~k3ohDtyffmiFq@rabbitmq.railway.internal:5672";
     const conn = await amqp.connect(RABBIT_URL);
     channel = await conn.createChannel();
     await channel.assertQueue("user_queue", { durable: true });
