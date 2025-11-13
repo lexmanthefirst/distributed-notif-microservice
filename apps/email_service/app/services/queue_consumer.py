@@ -236,7 +236,8 @@ class EmailQueueConsumer:
         """Send failed message to Dead Letter Queue"""
         try:
             if self.exchange:
-                dlq_data = email_msg.model_dump()
+                # Use mode='json' to serialize datetime objects to ISO format strings
+                dlq_data = email_msg.model_dump(mode='json')
                 dlq_data['final_error'] = error
                 dlq_data['failed_at'] = datetime.utcnow().isoformat()
 
