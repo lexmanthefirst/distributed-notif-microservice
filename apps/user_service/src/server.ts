@@ -4,6 +4,7 @@ import cors from "@fastify/cors";
 import { Client } from "pg";
 import amqp from "amqplib";
 import dotenv from "dotenv";
+import axios from "axios";
 
 dotenv.config();
 
@@ -12,14 +13,60 @@ fastify.register(cors);
 
 // PostgreSQL client
 const pgClient = new Client({
-  connectionString : process.env.DATABASE_URL,
-  ssl:{
-    rejectUnauthorized:false,
-  }
+  connectionString: process.env.DATABASE_URL,
+  ssl:
+    process.env.NODE_ENV === "production"
+      ? {
+          rejectUnauthorized: false,
+        }
+      : false,
 });
 
-// RabbitMQ channel (we’ll initialize later)
+// RabbitMQ channel (we'll initialize later)
 let channel: amqp.Channel;
+
+// Helper function to send email notification via API Gateway
+async function sendEmailNotification(
+  userEmail: string,
+  userName: string,
+  templateCode: string
+) {
+  try {
+    const apiGatewayUrl =
+      process.env.API_GATEWAY_URL || "http://localhost:4000";
+    const response = await axios.post(
+      `${apiGatewayUrl}/api/v1/notifications/email`,
+      {
+        user_email: userEmail,
+        template_code: templateCode,
+        template_data: {
+          user_name: userName,
+          app_name: "Distributed Notifications System",
+        },
+        priority: 8, // High priority for user events
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+        timeout: 5000, // 5 second timeout
+      }
+    );
+
+    console.log(
+      `✅ Email notification sent: ${templateCode} to ${userEmail}`,
+      response.data
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      `❌ Failed to send email notification to ${userEmail}:`,
+      error.response?.data || error.message
+    );
+    // Don't throw - email notification failure shouldn't block registration
+    return null;
+  }
+}
 
 fastify.get("/health", async () => ({ status: "ok", service: "user-service" }));
 
@@ -30,7 +77,9 @@ fastify.post("/register", async (request, reply) => {
   const { name, email, password, push_token } = request.body as any;
 
   if (!name || !email || !password) {
-    return reply.status(400).send({ success: false, message: "Missing fields" });
+    return reply
+      .status(400)
+      .send({ success: false, message: "Missing fields" });
   }
 
   try {
@@ -48,14 +97,27 @@ fastify.post("/register", async (request, reply) => {
       user,
       timestamp: new Date().toISOString(),
     };
-    channel.sendToQueue("user_queue", Buffer.from(JSON.stringify(eventPayload)), {
-      persistent: true,
-    });
+    channel.sendToQueue(
+      "user_queue",
+      Buffer.from(JSON.stringify(eventPayload)),
+      {
+        persistent: true,
+      }
+    );
 
-    return reply.send({ success: true, message: "User registered", data: user });
+    // 🆕 Send welcome email via API Gateway
+    await sendEmailNotification(user.email, user.name, "welcome");
+
+    return reply.send({
+      success: true,
+      message: "User registered",
+      data: user,
+    });
   } catch (err: any) {
     console.error(err);
-    return reply.status(500).send({ success: false, message: "Registration failed" });
+    return reply
+      .status(500)
+      .send({ success: false, message: "Registration failed" });
   }
 });
 
@@ -63,7 +125,9 @@ fastify.post("/register", async (request, reply) => {
 fastify.post("/login", async (request, reply) => {
   const { email, password } = request.body as any;
   if (!email || !password) {
-    return reply.status(400).send({ success: false, message: "Missing fields" });
+    return reply
+      .status(400)
+      .send({ success: false, message: "Missing fields" });
   }
 
   try {
@@ -72,11 +136,21 @@ fastify.post("/login", async (request, reply) => {
       [email, password]
     );
     if (result.rowCount === 0) {
-      return reply.status(401).send({ success: false, message: "Invalid credentials" });
+      return reply
+        .status(401)
+        .send({ success: false, message: "Invalid credentials" });
     }
 
     const user = result.rows[0];
-    return reply.send({ success: true, message: "Login successful", data: user });
+
+    // 🆕 Send login notification email
+    await sendEmailNotification(user.email, user.name, "login_alert");
+
+    return reply.send({
+      success: true,
+      message: "Login successful",
+      data: user,
+    });
   } catch (err: any) {
     console.error(err);
     return reply.status(500).send({ success: false, message: "Login failed" });
@@ -89,7 +163,9 @@ async function start() {
     await pgClient.connect();
     console.log("Connected to PostgreSQL");
 
-    const RABBIT_URL = process.env.RABBITMQ_URL || "amqp://TzSC3RZ1JAwfC6Tg:Gq~Ji2T0pm67t435v2~k3ohDtyffmiFq@rabbitmq.railway.internal:5672";
+    const RABBIT_URL =
+      process.env.RABBITMQ_URL ||
+      "amqp://TzSC3RZ1JAwfC6Tg:Gq~Ji2T0pm67t435v2~k3ohDtyffmiFq@rabbitmq.railway.internal:5672";
     const conn = await amqp.connect(RABBIT_URL);
     channel = await conn.createChannel();
     await channel.assertQueue("user_queue", { durable: true });
