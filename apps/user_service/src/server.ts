@@ -12,15 +12,32 @@ fastify.register(cors);
 
 // PostgreSQL client
 const pgClient = new Client({
-  connectionString : process.env.DATABASE_URL,
-  ssl:{
-    rejectUnauthorized:false,
-  }
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
 });
 
 // RabbitMQ channel (we’ll initialize later)
 let channel: amqp.Channel;
 
+
+async function initializeDB() {
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      email VARCHAR(100) UNIQUE NOT NULL,
+      password VARCHAR(255) NOT NULL,
+      push_token VARCHAR(255),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `;
+  await pgClient.query(createTableQuery);
+  console.log("✅ Users table is ready");
+}
+
+// Health check route
 fastify.get("/health", async () => ({ status: "ok", service: "user-service" }));
 
 fastify.get("/", async () => ({ message: "User Service API" }));
@@ -36,7 +53,9 @@ fastify.post("/register", async (request, reply) => {
   try {
     // Save user to PostgreSQL
     const result = await pgClient.query(
-      `INSERT INTO users(name, email, password, push_token) VALUES($1, $2, $3, $4) RETURNING id, name, email`,
+      `INSERT INTO users(name, email, password, push_token)
+       VALUES($1, $2, $3, $4)
+       RETURNING id, name, email`,
       [name, email, password, push_token || null]
     );
 
@@ -48,6 +67,7 @@ fastify.post("/register", async (request, reply) => {
       user,
       timestamp: new Date().toISOString(),
     };
+
     channel.sendToQueue("user_queue", Buffer.from(JSON.stringify(eventPayload)), {
       persistent: true,
     });
@@ -59,9 +79,10 @@ fastify.post("/register", async (request, reply) => {
   }
 });
 
-// Login route (basic example)
+// Login route
 fastify.post("/login", async (request, reply) => {
   const { email, password } = request.body as any;
+
   if (!email || !password) {
     return reply.status(400).send({ success: false, message: "Missing fields" });
   }
@@ -71,6 +92,7 @@ fastify.post("/login", async (request, reply) => {
       "SELECT id, name, email FROM users WHERE email=$1 AND password=$2",
       [email, password]
     );
+
     if (result.rowCount === 0) {
       return reply.status(401).send({ success: false, message: "Invalid credentials" });
     }
@@ -89,7 +111,12 @@ async function start() {
     await pgClient.connect();
     console.log("Connected to PostgreSQL");
 
-    const RABBIT_URL = process.env.RABBITMQ_URL || "amqp://TzSC3RZ1JAwfC6Tg:Gq~Ji2T0pm67t435v2~k3ohDtyffmiFq@rabbitmq.railway.internal:5672";
+    await initializeDB(); 
+
+    const RABBIT_URL =
+      process.env.RABBITMQ_URL ||
+      "amqp://guest:guest@rabbitmq:5672";
+
     const conn = await amqp.connect(RABBIT_URL);
     channel = await conn.createChannel();
     await channel.assertQueue("user_queue", { durable: true });
@@ -97,7 +124,7 @@ async function start() {
 
     const port = Number(process.env.PORT) || 4001;
     await fastify.listen({ port, host: "0.0.0.0" });
-    console.log(`User Service listening on port ${port}`);
+    console.log(`🚀 User Service listening on port ${port}`);
   } catch (err) {
     console.error("Error starting User Service:", err);
     process.exit(1);
