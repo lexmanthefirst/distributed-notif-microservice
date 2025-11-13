@@ -20,7 +20,7 @@ class EmailMessage(BaseModel):
     user_email: EmailStr = Field(..., description="Recipient email address")
     template_code: str = Field(..., description="Template identifier")
     variables: Dict[str, Any] = Field(default_factory=dict, description="Template variables")
-    priority: int = Field(default=1, ge=1, le=5, description="Priority (1=lowest, 5=highest)")
+    priority: int = Field(default=1, ge=1, le=10, description="Priority (1=lowest, 10=highest)")
     request_id: str = Field(..., description="Idempotency key")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata")
     created_at: datetime = Field(default_factory=datetime.utcnow)
