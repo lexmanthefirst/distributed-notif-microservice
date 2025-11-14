@@ -1,29 +1,29 @@
-FROM node:20-bookworm-slim AS deps
-WORKDIR /app
-RUN corepack enable
-COPY package.json ./
-RUN pnpm install
+FROM python:3.11-slim
 
-FROM node:20-bookworm-slim AS build
-WORKDIR /app
-RUN corepack enable
-COPY package.json tsconfig.json ./
-COPY --from=deps /app/node_modules ./node_modules
-COPY src ./src
-RUN pnpm run build
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+ENV PORT=8000
 
-FROM node:20-bookworm-slim AS runner
 WORKDIR /app
-RUN corepack enable && \
-    apt-get update && \
-    apt-get install -y curl && \
-    rm -rf /var/lib/apt/lists/*
-ENV NODE_ENV=production
-ENV PORT=4100
-COPY package.json ./
-RUN pnpm install --prod
-COPY --from=build /app/dist ./dist
-EXPOSE 4100
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+EXPOSE 8000
+
 HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
-	CMD curl -f http://localhost:4100/health || exit 1
-CMD ["node", "dist/server.js"]
+	CMD curl -f http://localhost:8000/health || exit 1
+
+# Run uvicorn with Gunicorn for production
+CMD ["gunicorn", "app.main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
