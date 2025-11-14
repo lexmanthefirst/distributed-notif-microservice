@@ -1,7 +1,7 @@
 """Email sending service with Resend API"""
 
 import asyncio
-from typing import Optional
+from typing import Any, Optional, cast
 
 import httpx
 import resend
@@ -219,7 +219,7 @@ class EmailSender:
             Exception: If Resend API call fails
         """
         try:
-            params = {
+            params: dict[str, Any] = {
                 "from": self.resend_from,
                 "to": [to_email],
                 "subject": subject,
@@ -230,10 +230,10 @@ class EmailSender:
             loop = asyncio.get_running_loop()
             response = await loop.run_in_executor(
                 None,
-                lambda: resend.Emails.send(params)
+                lambda: resend.Emails.send(params)  # type: ignore[arg-type]
             )
             
-            email_id = response.get('id', 'N/A')
+            email_id = response.get('id', 'N/A') if response else 'N/A'
             logger.info(f"Resend send successful: to={to_email}, email_id={email_id}")
             
         except Exception as e:
