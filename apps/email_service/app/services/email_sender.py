@@ -1,13 +1,10 @@
-"""Email sending service with SMTP and retry logic"""
+"""Email sending service with Resend API"""
 
 import asyncio
-import smtplib
-import ssl
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from typing import Optional
 
 import httpx
+import resend
 from jinja2 import Template
 
 from app.core.config import settings
@@ -19,25 +16,24 @@ from app.services.circuit_breaker import CircuitBreaker, CircuitBreakerError
 class EmailSender:
     """
     Email sending service with:
-    - SMTP support
+    - Resend API
     - Template rendering (Jinja2)
     - Circuit breaker for fault tolerance
     - Exponential backoff retry
     """
     
     def __init__(self):
-        self.smtp_config = {
-            'host': settings.smtp_host,
-            'port': settings.smtp_port,
-            'user': settings.smtp_user,
-            'password': settings.smtp_password,
-            'from_email': settings.smtp_from_email,
-            'from_name': settings.smtp_from_name,
-        }
+        # Validate Resend configuration
+        if not settings.resend_api_key:
+            raise ValueError("RESEND_API_KEY is required")
+        
+        # Initialize Resend SDK
+        resend.api_key = settings.resend_api_key
+        self.resend_from = f"{settings.resend_from_name} <{settings.resend_from_email}>"
         
         # Circuit breakers for external dependencies
-        self.smtp_circuit = CircuitBreaker(
-            name="smtp",
+        self.resend_circuit = CircuitBreaker(
+            name="resend_api",
             failure_threshold=settings.circuit_breaker_failure_threshold,
             timeout=settings.circuit_breaker_timeout,
             recovery_timeout=settings.circuit_breaker_recovery_timeout
@@ -50,10 +46,18 @@ class EmailSender:
             recovery_timeout=settings.circuit_breaker_recovery_timeout
         )
         
-        logger.info("EmailSender initialized with SMTP configuration")
+        logger.info(f"EmailSender initialized with Resend API: from={self.resend_from}")
     
     async def send_email(self, message: EmailMessage) -> tuple[bool, Optional[str]]:
-        """Send an email using the configured SMTP server."""
+        """
+        Send an email via Resend API with retry logic.
+        
+        Args:
+            message: Email message with template and variables
+            
+        Returns:
+            Tuple of (success: bool, error: Optional[str])
+        """
         last_error: Optional[str] = None
 
         for attempt in range(1, settings.max_retry_attempts + 1):
@@ -66,21 +70,25 @@ class EmailSender:
                     message.user_email,
                 )
 
+                # Fetch template from Template Service
                 template = await self.template_circuit.call(
                     self._fetch_template,
                     message.template_code,
                 )
+                
+                # Render template with variables
                 subject, html_body = self._render_template(template, message.variables)
 
-                await self.smtp_circuit.call(
-                    self._send_via_smtp,
+                # Send via Resend API
+                await self.resend_circuit.call(
+                    self._send_via_resend,
                     to_email=message.user_email,
                     subject=subject,
                     html_body=html_body,
                 )
 
                 logger.info(
-                    "Email sent: notification_id=%s to=%s attempt=%s",
+                    "Email sent successfully: notification_id=%s to=%s attempt=%s",
                     message.notification_id,
                     message.user_email,
                     attempt,
@@ -151,7 +159,7 @@ class EmailSender:
                 raise ValueError(f"Template not found: {template_code}")
             
             # Convert to EmailTemplate
-            # Template service returns html_body and text_body, we prefer html_body
+            # Template service returns html_body and text_body
             html_body = template_data.get("html_body", "")
             text_body = template_data.get("text_body", "")
             body = html_body if html_body else text_body
@@ -196,87 +204,50 @@ class EmailSender:
             logger.error(f"Template rendering failed: code={template.code}, error={str(e)}")
             raise ValueError(f"Template rendering error: {str(e)}")
     
-    async def _send_via_smtp(self, to_email: str, subject: str, html_body: str):
+    async def _send_via_resend(self, to_email: str, subject: str, html_body: str):
         """
-        Send email via SMTP
+        Send email via Resend API
+        
+        Uses HTTPS (port 443)
         
         Args:
-            to_email: Recipient email
-            subject: Email subject
-            html_body: HTML body
+            to_email: Recipient email address
+            subject: Email subject line
+            html_body: HTML email body
             
         Raises:
-            smtplib.SMTPException: If SMTP fails
+            Exception: If Resend API call fails
         """
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            self._send_smtp_sync,
-            to_email,
-            subject,
-            html_body,
-        )
-    
-    def _send_smtp_sync(self, to_email: str, subject: str, html_body: str):
-        """
-        Synchronous SMTP send (runs in executor)
-        
-        Args:
-            to_email: Recipient email
-            subject: Email subject
-            html_body: HTML body
+        try:
+            params = {
+                "from": self.resend_from,
+                "to": [to_email],
+                "subject": subject,
+                "html": html_body,
+            }
             
-        Raises:
-            smtplib.SMTPException: If SMTP fails
-        """
-        # Create message
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = f"{self.smtp_config['from_name']} <{self.smtp_config['from_email']}>"
-        msg['To'] = to_email
-        
-        # Attach HTML body
-        html_part = MIMEText(html_body, 'html')
-        msg.attach(html_part)
-        
-        # Create SSL context with proper certificate verification
-        # This handles SSL issues in containerized environments like Railway
-        context = ssl.create_default_context()
-        
-        # Send via SMTP
-        if self.smtp_config['port'] == 465:
-            # Use SMTP_SSL for port 465
-            with smtplib.SMTP_SSL(
-                self.smtp_config['host'], 
-                self.smtp_config['port'],
-                context=context
-            ) as server:
-                if self.smtp_config['user'] and self.smtp_config['password']:
-                    server.login(self.smtp_config['user'], self.smtp_config['password'])
-                else:
-                    logger.warning("SMTP credentials not provided; attempting anonymous send")
-
-                server.send_message(msg)
-        else:
-            # Use SMTP with STARTTLS for port 587 (SendGrid)
-            with smtplib.SMTP(self.smtp_config['host'], self.smtp_config['port'], timeout=30) as server:
-                server.set_debuglevel(0)  # Set to 1 for debugging
-                
-                # Initiate STARTTLS with SSL context
-                server.starttls(context=context)
-
-                if self.smtp_config['user'] and self.smtp_config['password']:
-                    server.login(self.smtp_config['user'], self.smtp_config['password'])
-                else:
-                    logger.warning("SMTP credentials not provided; attempting anonymous send")
-
-                server.send_message(msg)
-        
-        logger.info(f"SMTP send successful: to={to_email}")
+            # Run Resend SDK call in executor to avoid blocking event loop
+            loop = asyncio.get_running_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: resend.Emails.send(params)
+            )
+            
+            email_id = response.get('id', 'N/A')
+            logger.info(f"Resend send successful: to={to_email}, email_id={email_id}")
+            
+        except Exception as e:
+            logger.error(f"Resend send failed: to={to_email}, error={str(e)}")
+            raise
     
     def get_circuit_states(self) -> dict:
-        """Get circuit breaker states for monitoring"""
+        """
+        Get circuit breaker states for health monitoring
+        
+        Returns:
+            Dictionary with circuit breaker states
+        """
         return {
-            "smtp": self.smtp_circuit.get_state(),
+            "resend_api": self.resend_circuit.get_state(),
             "template_service": self.template_circuit.get_state()
         }
