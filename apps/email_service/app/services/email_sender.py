@@ -2,6 +2,7 @@
 
 import asyncio
 import smtplib
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
@@ -238,10 +239,18 @@ class EmailSender:
         html_part = MIMEText(html_body, 'html')
         msg.attach(html_part)
         
+        # Create SSL context with proper certificate verification
+        # This handles SSL issues in containerized environments like Railway
+        context = ssl.create_default_context()
+        
         # Send via SMTP
         if self.smtp_config['port'] == 465:
             # Use SMTP_SSL for port 465
-            with smtplib.SMTP_SSL(self.smtp_config['host'], self.smtp_config['port']) as server:
+            with smtplib.SMTP_SSL(
+                self.smtp_config['host'], 
+                self.smtp_config['port'],
+                context=context
+            ) as server:
                 if self.smtp_config['user'] and self.smtp_config['password']:
                     server.login(self.smtp_config['user'], self.smtp_config['password'])
                 else:
@@ -249,9 +258,12 @@ class EmailSender:
 
                 server.send_message(msg)
         else:
-            # Use SMTP with STARTTLS for port 587
-            with smtplib.SMTP(self.smtp_config['host'], self.smtp_config['port']) as server:
-                server.starttls()
+            # Use SMTP with STARTTLS for port 587 (SendGrid)
+            with smtplib.SMTP(self.smtp_config['host'], self.smtp_config['port'], timeout=30) as server:
+                server.set_debuglevel(0)  # Set to 1 for debugging
+                
+                # Initiate STARTTLS with SSL context
+                server.starttls(context=context)
 
                 if self.smtp_config['user'] and self.smtp_config['password']:
                     server.login(self.smtp_config['user'], self.smtp_config['password'])
