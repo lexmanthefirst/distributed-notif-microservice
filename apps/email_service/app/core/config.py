@@ -41,16 +41,10 @@ class Settings(BaseSettings):
     redis_password: Optional[str] = None
     redis_db: int = 0
     
-    # Email SMTP Configuration
-    smtp_host: str = "smtp.gmail.com"
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
-    smtp_from_email: str = ""
-    smtp_from_name: str = "Notification Service"
-    
-    # SendGrid API (alternative to SMTP)
-    sendgrid_api_key: Optional[str] = None
+    # Resend API Configuration
+    resend_api_key: Optional[str] = None
+    resend_from_email: str = ""  # Must be verified domain email
+    resend_from_name: str = "Notification Service"
     
     # Template Service
     template_service_url: str = "http://template_service:4002"
