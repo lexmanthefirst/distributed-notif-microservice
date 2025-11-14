@@ -74,7 +74,8 @@ fastify.get("/", async () => ({ message: "User Service API" }));
 
 // Register route
 fastify.post("/register", async (request, reply) => {
-  const { name, email, password, push_token } = request.body as any;
+  const { name, email, password, push_token,preference_email = true,
+    preference_push = false,} = request.body as any;
 
   if (!name || !email || !password) {
     return reply
@@ -85,10 +86,10 @@ fastify.post("/register", async (request, reply) => {
   try {
     // Save user to PostgreSQL
     const result = await pgClient.query(
-      `INSERT INTO users(name, email, password, push_token)
-       VALUES($1, $2, $3, $4)
-       RETURNING id, name, email`,
-      [name, email, password, push_token || null]
+      `INSERT INTO users(name, email, password, push_token,preference_email, preference_push)
+       VALUES($1, $2, $3, $4, $5, $6)
+       RETURNING id, name, email,preference_email, preference_push`,
+      [name, email, password, push_token,preference_email, preference_push || null]
     );
 
     const user = result.rows[0];
