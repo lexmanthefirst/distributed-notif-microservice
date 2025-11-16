@@ -45,7 +45,7 @@ async def health_check(request: Request):
     
     # Check circuit breakers
     circuit_states = email_sender.get_circuit_states()
-    checks["resend_circuit"] = circuit_states["resend"]["state"]
+    checks["resend_circuit"] = circuit_states["resend_api"]["state"]
     checks["template_circuit"] = circuit_states["template_service"]["state"]
     
     # Overall status

@@ -26,10 +26,17 @@ class EmailSender:
         # Validate Resend configuration
         if not settings.resend_api_key:
             raise ValueError("RESEND_API_KEY is required")
+        if not settings.resend_from_email:
+            raise ValueError("RESEND_FROM_EMAIL is required")
         
         # Initialize Resend SDK
         resend.api_key = settings.resend_api_key
-        self.resend_from = f"{settings.resend_from_name} <{settings.resend_from_email}>"
+        
+        # Format the "from" field properly
+        if settings.resend_from_name:
+            self.resend_from = f"{settings.resend_from_name} <{settings.resend_from_email}>"
+        else:
+            self.resend_from = settings.resend_from_email
         
         # Circuit breakers for external dependencies
         self.resend_circuit = CircuitBreaker(
