@@ -34,6 +34,17 @@ htmlcov/
 .env.production
 *.local
 
+# Firebase/FCM credentials (NEVER commit these!)
+firebase-credentials.json
+*-firebase-*.json
+firebase-*.json
+*firebase*.json
+
+# APNS credentials (NEVER commit these!)
+*.p8
+AuthKey_*.p8
+apns-*.p8
+
 # IDE
 .vscode/
 .idea/

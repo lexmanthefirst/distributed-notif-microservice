@@ -262,6 +262,9 @@ services:
       REDIS_PORT: 6379
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
       TEMPLATE_SERVICE_URL: http://template_service:4002
+      FCM_CREDENTIALS_PATH: /app/firebase-credentials.json
+    volumes:
+      - ./apps/push_service/lucient-ai-firebase-adminsdk-fbsvc-f3a16ee804.json:/app/firebase-credentials.json:ro
     depends_on:
       postgres_push:
         condition: service_healthy
