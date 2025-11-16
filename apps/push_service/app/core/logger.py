@@ -21,7 +21,7 @@ def setup_logging(level: str = "INFO") -> logging.Logger:
     """Configure structured logging with correlation ID"""
     
     # Create logger
-    logger = logging.getLogger("email_service")
+    logger = logging.getLogger("push_service")
     logger.setLevel(getattr(logging, level.upper()))
     
     # Remove existing handlers
@@ -34,7 +34,7 @@ def setup_logging(level: str = "INFO") -> logging.Logger:
     # Create formatter
     formatter = logging.Formatter(
         '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "correlation_id": "%(correlation_id)s", '
-        '"service": "email_service", "message": "%(message)s", "module": "%(module)s", "function": "%(funcName)s"}'
+        '"service": "push_service", "message": "%(message)s", "module": "%(module)s", "function": "%(funcName)s"}'
     )
     handler.setFormatter(formatter)
     
