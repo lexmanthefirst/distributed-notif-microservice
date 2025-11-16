@@ -3,7 +3,7 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
-ENV PORT=8000
+ENV PORT=4100
 
 WORKDIR /app
 
@@ -20,10 +20,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-EXPOSE 8000
+EXPOSE 4100
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
-	CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:${PORT:-4100}/health || exit 1
 
 # Run uvicorn with Gunicorn for production
-CMD ["gunicorn", "app.main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
+CMD ["sh", "-c", "gunicorn app.main:app --workers ${WEB_CONCURRENCY:-4} --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-4100}"]
