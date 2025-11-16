@@ -1,9 +1,11 @@
 """Configuration management using Pydantic Settings"""
 
-import os
 from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
@@ -71,11 +73,32 @@ class Settings(BaseSettings):
     correlation_id_header: str = "X-Correlation-ID"
     
     model_config = SettingsConfigDict(
-        env_file=str(Path(__file__).parent.parent.parent / ".env"),
+        env_file=str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
     )
+
+    @staticmethod
+    def _resolve_path(path_value: Optional[str]) -> Optional[str]:
+        """Resolve a potentially relative filesystem path to an absolute path."""
+        if not path_value:
+            return None
+
+        path = Path(path_value)
+        if path.is_absolute():
+            return str(path)
+
+        resolved_path = (BASE_DIR / path).resolve()
+        return str(resolved_path if resolved_path.exists() else path)
+    
+    def get_fcm_credentials_path(self) -> Optional[str]:
+        """Get absolute path to FCM credentials file"""
+        return self._resolve_path(self.fcm_credentials_path)
+    
+    def get_apns_key_path(self) -> Optional[str]:
+        """Get absolute path to APNS key file"""
+        return self._resolve_path(self.apns_key_path)
     
     def get_rabbitmq_url(self) -> str:
         """Get RabbitMQ connection URL - prefers full URL, falls back to components"""

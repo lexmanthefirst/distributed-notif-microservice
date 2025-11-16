@@ -59,8 +59,10 @@ class PushSender:
     def _init_firebase(self):
         """Initialize Firebase Admin SDK"""
         try:
-            if settings.fcm_credentials_path:
-                cred = credentials.Certificate(settings.fcm_credentials_path)
+            fcm_path = settings.get_fcm_credentials_path()
+            if fcm_path:
+                logger.info(f"Attempting to load FCM credentials from: {fcm_path}")
+                cred = credentials.Certificate(fcm_path)
                 firebase_admin.initialize_app(cred)
                 logger.info("Firebase initialized with service account")
             else:
@@ -71,9 +73,11 @@ class PushSender:
     def _init_apns(self):
         """Initialize APNS client"""
         try:
-            if settings.apns_key_path and settings.apns_key_id and settings.apns_team_id:
+            apns_path = settings.get_apns_key_path()
+            if apns_path and settings.apns_key_id and settings.apns_team_id:
+                logger.info(f"Attempting to load APNS key from: {apns_path}")
                 self.apns_client = APNs(
-                    key=settings.apns_key_path,
+                    key=apns_path,
                     key_id=settings.apns_key_id,
                     team_id=settings.apns_team_id,
                     topic=settings.apns_bundle_id,
