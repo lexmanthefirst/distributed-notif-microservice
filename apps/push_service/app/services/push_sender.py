@@ -59,14 +59,23 @@ class PushSender:
     def _init_firebase(self):
         """Initialize Firebase Admin SDK"""
         try:
+            credentials_payload = settings.get_fcm_credentials_payload()
+            if credentials_payload:
+                logger.info("Initializing Firebase using inline credentials payload")
+                cred = credentials.Certificate(credentials_payload)
+                firebase_admin.initialize_app(cred)
+                logger.info("Firebase initialized with inline service account")
+                return
+
             fcm_path = settings.get_fcm_credentials_path()
             if fcm_path:
                 logger.info(f"Attempting to load FCM credentials from: {fcm_path}")
                 cred = credentials.Certificate(fcm_path)
                 firebase_admin.initialize_app(cred)
-                logger.info("Firebase initialized with service account")
-            else:
-                logger.warning("FCM credentials not configured - FCM push will fail")
+                logger.info("Firebase initialized with service account file")
+                return
+
+            logger.warning("FCM credentials not configured - FCM push will fail")
         except Exception as e:
             logger.error(f"Failed to initialize Firebase: {e}")
     

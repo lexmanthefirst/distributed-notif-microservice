@@ -1,11 +1,15 @@
 """Configuration management using Pydantic Settings"""
 
+import base64
+import json
+import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -45,6 +49,7 @@ class Settings(BaseSettings):
     
     # Firebase Cloud Messaging (FCM) Configuration
     fcm_credentials_path: Optional[str] = None  # Path to firebase-adminsdk.json
+    fcm_credentials_json: Optional[str] = None  # Inline JSON/base64 credentials
     fcm_server_key: Optional[str] = None  # Legacy FCM server key (optional)
     
     # Apple Push Notification Service (APNS) Configuration
@@ -95,6 +100,29 @@ class Settings(BaseSettings):
     def get_fcm_credentials_path(self) -> Optional[str]:
         """Get absolute path to FCM credentials file"""
         return self._resolve_path(self.fcm_credentials_path)
+
+    def get_fcm_credentials_payload(self) -> Optional[dict[str, Any]]:
+        """Parse inline FCM credentials JSON (plain or base64)."""
+        raw = self.fcm_credentials_json
+        if not raw:
+            return None
+
+        candidates: list[str] = [raw]
+        try:
+            decoded = base64.b64decode(raw, validate=True).decode("utf-8")
+            candidates.insert(0, decoded)
+        except Exception:
+            # Not base64 (or invalid) - ignore silently and try raw text
+            pass
+
+        for candidate in candidates:
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+
+        logger.error("FCM_CREDENTIALS_JSON must be valid JSON or base64-encoded JSON")
+        return None
     
     def get_apns_key_path(self) -> Optional[str]:
         """Get absolute path to APNS key file"""
